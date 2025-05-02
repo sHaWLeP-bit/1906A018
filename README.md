@@ -6,13 +6,11 @@
 
 ## 🚀 Overview
 
-This repository provides a base GUI framework for students to develop and integrate machine learning methods. The GUI is built using PyQt6 and supports various classical machine learning and deep learning techniques. Students will extend this GUI by adding necessary functionalities over time.
+This project provides an interactive PyQt6-based GUI for machine learning education and experimentation, designed for MKT3434 coursework. It supports PCA, LDA, t-SNE, UMAP, clustering metrics, and cross-validation tools.
+
+
 
 ---
-
-## 📚 Long-Term Homework Instructions
-
-Students are required to modify and enhance this GUI incrementally every three weeks. The objective is to build a fully functional and improved machine learning GUI.
 
 ### 🎯 Key Requirements:
 
@@ -24,13 +22,6 @@ Students are required to modify and enhance this GUI incrementally every three w
 
 ---
 
-## 🤝 Repository and Collaboration
-
-Students should fork this repository and develop their versions.
-
-Regular commits and documentation updates are expected.
-
----
 
 ## 🏁 Getting Started
 
@@ -43,4 +34,4 @@ Ensure you have the following installed:
 ### 📦 Required dependencies:
 
 ```bash
-pip install numpy pandas matplotlib PyQt6 scikit-learn tensorflow torch torchvision torchaudio opencv-python opencv-contrib-python scipy fastai kornia
+pip install numpy pandas matplotlib PyQt6 scikit-learn tensorflow torch torchvision torchaudio opencv-python opencv-contrib-python scipy fastai kornia umap-learn plotly

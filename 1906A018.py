@@ -1,6 +1,10 @@
 import sys
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+import plotly.express as px
+import umap
+import tensorflow as tf
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                            QHBoxLayout, QTabWidget, QPushButton, QLabel, 
                            QComboBox, QFileDialog, QSpinBox, QDoubleSpinBox,
@@ -8,7 +12,6 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                            QProgressBar, QCheckBox, QGridLayout, QMessageBox,
                            QDialog, QLineEdit)
 from PyQt6.QtCore import Qt
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from sklearn import datasets, preprocessing, model_selection
@@ -27,7 +30,9 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import LabelEncoder
 from sklearn.utils.multiclass import unique_labels
-import tensorflow as tf
+from sklearn.decomposition import PCA
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.cluster import KMeans
 from keras import layers, models, optimizers
 
 class MLCourseGUI(QMainWindow):
@@ -56,6 +61,7 @@ class MLCourseGUI(QMainWindow):
         self.create_tabs()
         self.create_visualization()
         self.create_status_bar()
+
     def load_dataset(self):
         """Load selected dataset"""
         try:
@@ -167,6 +173,7 @@ class MLCourseGUI(QMainWindow):
                 
             except Exception as e:
                 self.show_error(f"Error applying scaling: {str(e)}")
+
     def create_data_section(self):
         """Create the data loading and preprocessing section"""
         data_group = QGroupBox("Data Management")
@@ -256,7 +263,8 @@ class MLCourseGUI(QMainWindow):
             ("Classical ML", self.create_classical_ml_tab),
             ("Deep Learning", self.create_deep_learning_tab),
             ("Dimensionality Reduction", self.create_dim_reduction_tab),
-            ("Reinforcement Learning", self.create_rl_tab)
+            ("Reinforcement Learning", self.create_rl_tab),
+            ("Advanced Reduction", self.create_advanced_reduction_tab)
         ]
         
         for tab_name, create_func in tabs:
@@ -433,6 +441,75 @@ class MLCourseGUI(QMainWindow):
         layout.addWidget(algo_group, 0, 1)
         
         return widget
+    
+    def create_advanced_reduction_tab(self):
+        """Advanced Reduction: PCA, Supervised, KMeans+Elbow, UMAP, Plotly"""
+        widget = QWidget()
+        layout = QGridLayout(widget)
+
+        # 1) PCA + Explained Variance
+        pca_group = QGroupBox("PCA & Explained Variance")
+        pca_layout = QVBoxLayout()
+        self.pca_comp_spin = QSpinBox()
+        self.pca_comp_spin.setRange(1, 10)
+        pca_layout.addWidget(QLabel("n_components:"))
+        pca_layout.addWidget(self.pca_comp_spin)
+        btn_var = QPushButton("Show Variance Plot")
+        btn_var.clicked.connect(self._show_pca_variance)
+        pca_layout.addWidget(btn_var)
+        pca_group.setLayout(pca_layout)
+        layout.addWidget(pca_group, 0, 0)
+
+        # 2) Supervised Reduction (LDA) + Separation Metric
+        sup_group = QGroupBox("Supervised (LDA) + Separation")
+        sup_layout = QVBoxLayout()
+        btn_lda = QPushButton("Compute LDA & Separation")
+        btn_lda.clicked.connect(self._compute_lda_separation)
+        sup_layout.addWidget(btn_lda)
+        sup_group.setLayout(sup_layout)
+        layout.addWidget(sup_group, 0, 1)
+
+        # 3) KMeans + Elbow Method
+        km_group = QGroupBox("KMeans + Elbow Method")
+        km_layout = QVBoxLayout()
+        self.km_max_spin = QSpinBox()
+        self.km_max_spin.setRange(2, 20)
+        km_layout.addWidget(QLabel("Max k for Elbow:"))
+        km_layout.addWidget(self.km_max_spin)
+        btn_elbow = QPushButton("Show Elbow Plot")
+        btn_elbow.clicked.connect(self._show_elbow_plot)
+        km_layout.addWidget(btn_elbow)
+        km_group.setLayout(km_layout)
+        layout.addWidget(km_group, 1, 0)
+
+        # 4) UMAP (faster t-SNE alt.)
+        umap_group = QGroupBox("UMAP Projection")
+        umap_layout = QVBoxLayout()
+        self.umap_neighbors = QSpinBox()
+        self.umap_neighbors.setRange(2, 50)
+        umap_layout.addWidget(QLabel("n_neighbors (UMAP):"))
+        umap_layout.addWidget(self.umap_neighbors)
+        btn_umap = QPushButton("Apply UMAP & Show")
+        btn_umap.clicked.connect(self._show_umap_plot)
+        umap_layout.addWidget(btn_umap)
+        umap_group.setLayout(umap_layout)
+        layout.addWidget(umap_group, 1, 1)
+
+        # 5) Plotly 2D/3D Interactive
+        plotly_group = QGroupBox("Interactive Plotly 2D/3D")
+        plotly_layout = QHBoxLayout()
+        btn2d = QPushButton("Show 2D Plotly")
+        btn2d.clicked.connect(self._plotly_2d)
+        btn3d = QPushButton("Show 3D Plotly")
+        btn3d.clicked.connect(self._plotly_3d)
+        plotly_layout.addWidget(btn2d)
+        plotly_layout.addWidget(btn3d)
+        plotly_group.setLayout(plotly_layout)
+        layout.addWidget(plotly_group, 2, 0, 1, 2)
+
+        widget.setLayout(layout)
+        return widget
+
     
     def create_visualization(self):
         """Create the visualization section"""
@@ -938,6 +1015,71 @@ class MLCourseGUI(QMainWindow):
         """Show error message dialog"""
         QMessageBox.critical(self, "Error", message)
 
+    def _show_pca_variance(self):
+        
+        comp = self.pca_comp_spin.value()
+        pca = PCA(n_components=comp)
+        Xp = pca.fit_transform(self.X_train)
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+        ax.bar(range(1, comp+1), pca.explained_variance_ratio_)
+        ax.set_xlabel("Component")
+        ax.set_ylabel("Explained Variance")
+        self.canvas.draw()
+
+    def _compute_lda_separation(self):
+       
+        lda = LinearDiscriminantAnalysis(n_components=1)
+        Xp = lda.fit_transform(self.X_train, self.y_train)
+        sep = np.var(np.mean(Xp, axis=0)) / np.mean(np.var(Xp, axis=0))
+        QMessageBox.information(self, "Separation", f"Fisher ratio: {sep:.3f}")
+
+    def _show_elbow_plot(self):
+        
+        max_k = self.km_max_spin.value()
+        inertias = []
+        for k in range(1, max_k+1):
+            inertias.append(KMeans(n_clusters=k, random_state=42)
+                             .fit(self.X_train).inertia_)
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+        ax.plot(range(1, max_k+1), inertias, '-o')
+        ax.set_xlabel("k"); ax.set_ylabel("Inertia")
+        self.canvas.draw()
+
+    def _show_umap_plot(self):
+        
+        neigh = self.umap_neighbors.value()
+        reducer = umap.UMAP(n_neighbors=neigh, random_state=42)
+        Xu = reducer.fit_transform(self.X_train)
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+        ax.scatter(Xu[:,0], Xu[:,1], c=self.y_train, cmap='viridis')
+        self.canvas.draw()
+
+    def _plotly_2d(self):
+        
+        fig = px.scatter(x=self.X_train[:,0], y=self.X_train[:,1], color=self.y_train)
+        self._embed_plotly(fig)
+
+    def _plotly_3d(self):
+        
+        zdata = (self.X_train[:,2] 
+                 if self.X_train.shape[1] > 2 
+                 else np.zeros(len(self.X_train)))
+        fig = px.scatter_3d(
+            x=self.X_train[:,0], y=self.X_train[:,1],
+            z=zdata, color=self.y_train
+        )
+        self._embed_plotly(fig)
+
+    def project_1d(self, X):
+        Sigma = np.array([[5,2],[2,3]])
+        vals, vecs = np.linalg.eigh(Sigma)
+        v = vecs[:, np.argmax(vals)]
+        X_proj = X.dot(v)
+        return X_proj, v
+
 def main():
     """Main function to start the application"""
     app = QApplication(sys.argv)
@@ -947,4 +1089,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

@@ -1,4 +1,5 @@
 import sys
+import io
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -10,7 +11,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                            QComboBox, QFileDialog, QSpinBox, QDoubleSpinBox,
                            QGroupBox, QScrollArea, QTextEdit, QStatusBar,
                            QProgressBar, QCheckBox, QGridLayout, QMessageBox,
-                           QDialog, QLineEdit)
+                           QDialog, QLineEdit, QListWidget)
 from PyQt6.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -587,13 +588,32 @@ class MLCourseGUI(QMainWindow):
         # MLP section
         mlp_group = QGroupBox("Multi-Layer Perceptron")
         mlp_layout = QVBoxLayout()
+
+        # Model Save/Load Buttons 
+        save_btn = QPushButton("Save Model")
+        save_btn.clicked.connect(self.save_model)
+        mlp_layout.addWidget(save_btn)
+
+        load_btn = QPushButton("Load Model")
+        load_btn.clicked.connect(self.load_model)
+        mlp_layout.addWidget(load_btn)
         
         # Layer configuration
         self.layer_config = []
         layer_btn = QPushButton("Add Layer")
         layer_btn.clicked.connect(self.add_layer_dialog)
         mlp_layout.addWidget(layer_btn)
-        
+
+
+        # Layer List and remove button
+        self.layer_list = QListWidget()
+        mlp_layout.addWidget(self.layer_list)
+
+        delete_btn = QPushButton("Delete Selected Layer")
+        delete_btn.clicked.connect(self.delete_selected_layer)
+        mlp_layout.addWidget(delete_btn)
+
+                
         # Training parameters
         training_params_group = self.create_training_params_group()
         mlp_layout.addWidget(training_params_group)
@@ -609,6 +629,38 @@ class MLCourseGUI(QMainWindow):
         # CNN section
         cnn_group = QGroupBox("Convolutional Neural Network")
         cnn_layout = QVBoxLayout()
+
+        # Augmentation options
+        aug_group = QGroupBox("Image Augmentation")
+        aug_layout = QVBoxLayout()
+
+        self.flip_check = QCheckBox("Horizontal Flip")
+        self.rotate_spin = QSpinBox()
+        self.rotate_spin.setRange(0, 90)
+        self.rotate_spin.setValue(10)
+        aug_layout.addWidget(QLabel("Rotation Range:"))
+        aug_layout.addWidget(self.rotate_spin)
+        aug_layout.addWidget(self.flip_check)
+
+        aug_group.setLayout(aug_layout)
+        cnn_layout.addWidget(aug_group)
+        
+        # Pretrained Model Section
+        pt_group = QGroupBox("Pretrained Model (Transfer Learning)")
+        pt_layout = QVBoxLayout()
+
+        self.pretrained_combo = QComboBox()
+        self.pretrained_combo.addItems(["None", "VGG16", "ResNet50"])
+        pt_layout.addWidget(QLabel("Base Model:"))
+        pt_layout.addWidget(self.pretrained_combo)
+
+        pt_train_btn = QPushButton("Train Pretrained Model")
+        pt_train_btn.clicked.connect(self.train_pretrained_model)
+        pt_layout.addWidget(pt_train_btn)
+
+        pt_group.setLayout(pt_layout)
+        cnn_layout.addWidget(pt_group)
+
         
         # CNN architecture controls
         cnn_controls = self.create_cnn_controls()
@@ -640,7 +692,7 @@ class MLCourseGUI(QMainWindow):
         type_layout = QHBoxLayout()
         type_label = QLabel("Layer Type:")
         type_combo = QComboBox()
-        type_combo.addItems(["Dense", "Conv2D", "MaxPooling2D", "Flatten", "Dropout"])
+        type_combo.addItems(["Dense", "Conv2D", "MaxPooling2D", "Flatten", "Dropout", "LSTM / GRU"])
         type_layout.addWidget(type_label)
         type_layout.addWidget(type_combo)
         layout.addLayout(type_layout)
@@ -704,6 +756,26 @@ class MLCourseGUI(QMainWindow):
                 
                 params_layout.addWidget(rate_label)
                 params_layout.addWidget(rate_input)
+            #
+            elif layer_type == "LSTM / GRU":
+                units_label = QLabel("Units:")
+                units_input = QDoubleSpinBox()
+                units_input.setRange(1, 1000)
+                self.layer_param_inputs["units"] = units_input
+                
+                activation_label = QLabel("Activation:")
+                activation_combo = QComboBox()
+                activation_combo.addItems(["tanh", "sigmoid", "relu"])
+                self.layer_param_inputs["activation"] = activation_combo
+                
+                return_seq_check = QCheckBox("Return Sequences")
+                self.layer_param_inputs["return_sequences"] = return_seq_check
+                
+                params_layout.addWidget(units_label)
+                params_layout.addWidget(units_input)
+                params_layout.addWidget(activation_label)
+                params_layout.addWidget(activation_combo)
+                params_layout.addWidget(return_seq_check)
         
         type_combo.currentIndexChanged.connect(update_params)
         update_params()  # Initial update
@@ -741,11 +813,15 @@ class MLCourseGUI(QMainWindow):
                 "params": layer_params
             })
             
+            desc = f"{layer_type} - " + ", ".join(f"{k}={v}" for k,v in layer_params.items())
+            self.layer_list.addItem(desc)
+
             dialog.accept()
         
         add_btn.clicked.connect(add_layer)
         cancel_btn.clicked.connect(dialog.reject)
-        
+    
+
         dialog.exec()
     
     def create_training_params_group(self):
@@ -753,6 +829,38 @@ class MLCourseGUI(QMainWindow):
         group = QGroupBox("Training Parameters")
         layout = QVBoxLayout()
         
+
+        # Optimizer selection
+        opt_layout = QHBoxLayout()
+        opt_layout.addWidget(QLabel("Optimizer:"))
+        self.optimizer_combo = QComboBox()
+        self.optimizer_combo.addItems(["Adam", "SGD", "RMSprop"])
+        opt_layout.addWidget(self.optimizer_combo)
+        layout.addLayout(opt_layout)
+
+        # Scheduler selection
+        sched_layout = QHBoxLayout()
+        sched_layout.addWidget(QLabel("LR Scheduler:"))
+        self.scheduler_combo = QComboBox()
+        self.scheduler_combo.addItems(["None", "Step Decay", "Exponential Decay"])
+        sched_layout.addWidget(self.scheduler_combo)
+        layout.addLayout(sched_layout)
+
+        # L2 Regularization
+        l2_layout = QHBoxLayout()
+        l2_layout.addWidget(QLabel("L2 Regularization:"))
+        self.l2_spin = QDoubleSpinBox()
+        self.l2_spin.setRange(0.0, 1.0)
+        self.l2_spin.setSingleStep(0.001)
+        self.l2_spin.setValue(0.0)
+        l2_layout.addWidget(self.l2_spin)
+        layout.addLayout(l2_layout)
+
+        # Early Stopping
+        self.early_stop_check = QCheckBox("Use Early Stopping")
+        layout.addWidget(self.early_stop_check)
+
+
         # Batch size
         batch_layout = QHBoxLayout()
         batch_layout.addWidget(QLabel("Batch Size:"))
@@ -899,17 +1007,62 @@ class MLCourseGUI(QMainWindow):
             learning_rate = self.lr_spin.value()
             
             # Compile model
-            optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+            # Select optimizer from GUI 
+            optimizer_name = self.optimizer_combo.currentText()
+            if optimizer_name == "Adam":
+                optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+            elif optimizer_name == "SGD":
+                optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate)
+            elif optimizer_name == "RMSprop":
+                optimizer = tf.keras.optimizers.RMSprop(learning_rate=learning_rate)
+
+            # Apply L2 Regularization to Dense Layers
+            l2_value = self.l2_spin.value()
+            for layer in model.layers:
+                if isinstance(layer, tf.keras.layers.Dense):
+                    layer.kernel_regularizer = tf.keras.regularizers.l2(l2_value)
+
             model.compile(optimizer=optimizer,
                         loss='categorical_crossentropy',
                         metrics=['accuracy'])
             
+
+            # Callbacks
+            callbacks = [self.create_progress_callback()]
+
+            # Scheduler
+            scheduler_type = self.scheduler_combo.currentText()
+
+            if scheduler_type == "Step Decay":
+                def scheduler(epoch, lr):
+                    return lr * 0.5 if epoch > 5 else lr
+                callbacks.append(tf.keras.callbacks.LearningRateScheduler(scheduler))
+            
+            elif scheduler_type == "Exponential Decay":
+                def scheduler(epoch, lr):
+                    return lr * tf.math.exp(-0.1)
+                callbacks.append(tf.keras.callbacks.LearningRateScheduler(scheduler))
+
+            # Early Stopping
+            if self.early_stop_check.isChecked():
+                callbacks.append(tf.keras.callbacks.EarlyStopping(
+                    monitor='val_loss', patience=5, restore_best_weights=True))
+                
+            # exp. batch for gradian for eposh
+            grad_sample = self.X_train[:64].astype("float32")
+            grad_label = tf.keras.utils.to_categorical(self.y_train[:64])
+
+            # Gradient histogram callback
+            callbacks.append(self.create_gradient_callback(model, grad_sample, grad_label))
+
+
             # Train model
             history = model.fit(self.X_train, self.y_train,
                               batch_size=batch_size,
                               epochs=epochs,
                               validation_data=(self.X_test, self.y_test),
                               callbacks=[self.create_progress_callback()])
+            
             
             # Update visualization with training history
             self.plot_training_history(history)
@@ -945,7 +1098,7 @@ class MLCourseGUI(QMainWindow):
             ax.set_ylabel("Predicted Values")
             
         else:  # Classification
-            if self.X_train.shape[1] > 2:  # Use PCA for visualization
+            if self.X_train.shape[1] > 2:  
                 pca = PCA(n_components=2)
                 X_test_2d = pca.fit_transform(self.X_test)
                 
@@ -967,7 +1120,7 @@ class MLCourseGUI(QMainWindow):
         metrics_text = "Model Performance Metrics:\n\n"
         
         # Calculate appropriate metrics based on problem type
-        if len(np.unique(self.y_test)) > 10:  # Regression
+        if len(np.unique(self.y_test)) > 10:  
             mse = mean_squared_error(self.y_test, y_pred)
             rmse = np.sqrt(mse)
             r2 = self.current_model.score(self.X_test, self.y_test)
@@ -1079,6 +1232,144 @@ class MLCourseGUI(QMainWindow):
         v = vecs[:, np.argmax(vals)]
         X_proj = X.dot(v)
         return X_proj, v
+    
+    def delete_selected_layer(self):
+        selected = self.layer_list.currentRow()
+        if selected >= 0:
+            self.layer_list.takeItem(selected)         
+            del self.layer_config[selected]          
+
+    def save_model(self):
+        if self.current_model:
+            file_path, _ = QFileDialog.getSaveFileName(self, "Save Model", "", "H5 Files (*.h5)")
+            if file_path:
+                self.current_model.save(file_path)
+                QMessageBox.information(self, "Model Saved", f"Model saved to:\n{file_path}")
+        else:
+            QMessageBox.warning(self, "No Model", "Train a model before saving.")
+
+    def load_model(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Load Model", "", "H5 Files (*.h5)")
+        if file_path:
+            try:
+                model = tf.keras.models.load_model(file_path)
+                self.current_model = model
+                QMessageBox.information(self, "Model Loaded", f"Model loaded from:\n{file_path}")
+            except Exception as e:
+                self.show_error(f"Error loading model:\n{str(e)}")
+
+    def train_pretrained_model(self):
+        try:
+            base_name = self.pretrained_combo.currentText()
+            if base_name == "None":
+                QMessageBox.warning(self, "Select Model", "Please select a pretrained model.")
+                return
+            
+
+
+            # Input shape
+            input_shape = self.X_train.shape[1:]
+
+            if self.X_train is None or self.y_train is None:
+                self.show_error("No dataset loaded. Please load a dataset first.")
+                return
+
+            X_train = np.array(self.X_train)
+            X_test = np.array(self.X_test)
+
+            
+            if X_train.ndim == 3:
+                X_train = X_train[..., np.newaxis]
+                X_test = X_test[..., np.newaxis]
+
+            X_train = tf.image.resize(X_train, [224, 224]).numpy()
+            X_test = tf.image.resize(X_test, [224, 224]).numpy()
+
+            if X_train.shape[-1] == 1:
+                X_train = np.repeat(X_train, 3, axis=-1)
+                X_test = np.repeat(X_test, 3, axis=-1)
+
+            
+            input_shape = X_train.shape[1:]
+
+            
+            y_train = tf.keras.utils.to_categorical(self.y_train)
+            y_test = tf.keras.utils.to_categorical(self.y_test)
+
+
+            if len(input_shape) == 2:  
+                input_shape = (*input_shape, 1)
+                X_train = self.X_train.reshape(-1, *input_shape).astype("float32")
+                X_test = self.X_test.reshape(-1, *input_shape).astype("float32")
+            else:
+                X_train = self.X_train.astype("float32")
+                X_test = self.X_test.astype("float32")
+
+            y_train = tf.keras.utils.to_categorical(self.y_train)
+            y_test = tf.keras.utils.to_categorical(self.y_test)
+
+            # Model selection
+            if base_name == "VGG16":
+                base_model = tf.keras.applications.VGG16(
+                    input_shape=input_shape,
+                    include_top=False,
+                    weights='imagenet')
+            elif base_name == "ResNet50":
+                base_model = tf.keras.applications.ResNet50(
+                    input_shape=input_shape,
+                    include_top=False,
+                    weights='imagenet')
+
+            base_model.trainable = False  
+            model = models.Sequential([
+                base_model,
+                layers.Flatten(),
+                layers.Dense(128, activation='relu'),
+                layers.Dropout(0.5),
+                layers.Dense(y_train.shape[1], activation='softmax')
+            ])
+
+            # Compile
+            model.compile(optimizer='adam',
+                        loss='categorical_crossentropy',
+                        metrics=['accuracy'])
+
+            # Fit
+            history = model.fit(X_train, y_train,
+                                validation_data=(X_test, y_test),
+                                epochs=5,
+                                batch_size=32)
+
+            self.plot_training_history(history)
+            self.status_bar.showMessage(f"Pretrained model ({base_name}) trained.")
+
+            self.current_model = model
+
+        except Exception as e:
+            self.show_error(f"Error during transfer learning:\n{str(e)}")
+
+    def create_gradient_callback(self, model, X_batch, y_batch):
+        class GradientHistogramCallback(tf.keras.callbacks.Callback):
+            def on_epoch_end(inner_self, epoch, logs=None):
+                with tf.GradientTape() as tape:
+                    y_pred = model(X_batch, training=True)
+                    loss = tf.keras.losses.categorical_crossentropy(y_batch, y_pred)
+
+                gradients = tape.gradient(loss, model.trainable_variables)
+                flat_grads = [g.numpy().flatten() for g in gradients if g is not None]
+                all_grads = np.concatenate(flat_grads)
+
+                # Plot histogram
+                self.figure.clear()
+                ax = self.figure.add_subplot(111)
+                ax.hist(all_grads, bins=50, color='skyblue')
+                ax.set_title(f'Gradient Histogram - Epoch {epoch + 1}')
+                ax.set_xlabel('Gradient Value')
+                ax.set_ylabel('Frequency')
+                self.canvas.draw()
+
+        return GradientHistogramCallback()
+
 
 def main():
     """Main function to start the application"""

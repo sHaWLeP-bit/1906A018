@@ -25,7 +25,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import accuracy_score, mean_squared_error, confusion_matrix
-from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import mean_absolute_error, f1_score
 from sklearn.svm import SVR
 from sklearn.naive_bayes import GaussianNB
 from sklearn.impute import SimpleImputer
@@ -682,7 +682,7 @@ class MLCourseGUI(QMainWindow):
         
         return widget
     
-    def add_layer_dialog(self):
+    def add_layer_dialog(self, for_cnn=False, for_rnn=False):
         """Open a dialog to add a neural network layer"""
         dialog = QDialog(self)
         dialog.setWindowTitle("Add Neural Network Layer")
@@ -893,28 +893,41 @@ class MLCourseGUI(QMainWindow):
         return group
     
     def create_cnn_controls(self):
-        """Create controls for Convolutional Neural Network"""
         group = QGroupBox("CNN Architecture")
         layout = QVBoxLayout()
-        
-        # Placeholder for CNN-specific controls
-        label = QLabel("CNN Controls (To be implemented)")
-        layout.addWidget(label)
-        
+
+        self.cnn_layer_list = QListWidget()
+        layout.addWidget(self.cnn_layer_list)
+
+        add_btn = QPushButton("Add CNN Layer")
+        add_btn.clicked.connect(lambda: self.add_layer_dialog(for_cnn=True))
+        layout.addWidget(add_btn)
+
+        del_btn = QPushButton("Delete Selected CNN Layer")
+        del_btn.clicked.connect(lambda: self.delete_selected_layer(for_cnn=True))
+        layout.addWidget(del_btn)
+
         group.setLayout(layout)
         return group
     
     def create_rnn_controls(self):
-        """Create controls for Recurrent Neural Network"""
         group = QGroupBox("RNN Architecture")
         layout = QVBoxLayout()
-        
-        # Placeholder for RNN-specific controls
-        label = QLabel("RNN Controls (To be implemented)")
-        layout.addWidget(label)
-        
+
+        self.rnn_layer_list = QListWidget()
+        layout.addWidget(self.rnn_layer_list)
+
+        add_btn = QPushButton("Add RNN Layer")
+        add_btn.clicked.connect(lambda: self.add_layer_dialog(for_rnn=True))
+        layout.addWidget(add_btn)
+
+        del_btn = QPushButton("Delete Selected RNN Layer")
+        del_btn.clicked.connect(lambda: self.delete_selected_layer(for_rnn=True))
+        layout.addWidget(del_btn)
+
         group.setLayout(layout)
         return group
+
     
     def train_neural_network(self):
         """Train the neural network with current configuration"""
@@ -1131,6 +1144,10 @@ class MLCourseGUI(QMainWindow):
             
         else:  # Classification
             accuracy = accuracy_score(self.y_test, y_pred)
+
+            f1 = f1_score(self.y_test, y_pred, average="weighted")
+            metrics_text += f"F1 Score: {f1:.4f}\n\n"
+
             conf_matrix = confusion_matrix(self.y_test, y_pred)
             
             metrics_text += f"Accuracy: {accuracy:.4f}\n\n"
@@ -1247,6 +1264,7 @@ class MLCourseGUI(QMainWindow):
                 QMessageBox.information(self, "Model Saved", f"Model saved to:\n{file_path}")
         else:
             QMessageBox.warning(self, "No Model", "Train a model before saving.")
+
 
     def load_model(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Load Model", "", "H5 Files (*.h5)")
